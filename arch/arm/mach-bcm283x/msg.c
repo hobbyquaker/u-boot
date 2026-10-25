@@ -99,6 +99,26 @@ int bcm2835_get_mmc_clock(u32 clock_id)
 
 	clock_rate = msg_clk->get_clock_rate.body.resp.rate_hz;
 
+	/*
+	 * EMMC2 (BCM2711): the firmware reports a current rate only after a
+	 * SET_CLOCK_RATE, which U-Boot never sends, and its maximum (500 MHz)
+	 * is five times the rate the clock really runs at (100 MHz). Taken as
+	 * the base clock, the maximum makes sdhci divide 50 MHz down to 10 MHz.
+	 * Ask for the measured rate first, rounded to whole MHz: a measurement
+	 * a little above 100 MHz would otherwise halve the card clock again.
+	 */
+	if (clock_rate == 0 && clock_id == BCM2835_MBOX_CLOCK_ID_EMMC2) {
+		BCM2835_MBOX_INIT_HDR(msg_clk);
+		BCM2835_MBOX_INIT_TAG(&msg_clk->get_clock_rate,
+				      GET_CLOCK_RATE_MEASURED);
+		msg_clk->get_clock_rate.body.req.clock_id = clock_id;
+
+		ret = bcm2835_mbox_call_prop(BCM2835_MBOX_PROP_CHAN, &msg_clk->hdr);
+		if (!ret)
+			clock_rate = (msg_clk->get_clock_rate.body.resp.rate_hz +
+				      500000) / 1000000 * 1000000;
+	}
+
 	if (clock_rate == 0) {
 		BCM2835_MBOX_INIT_HDR(msg_clk);
 		BCM2835_MBOX_INIT_TAG(&msg_clk->get_clock_rate, GET_MAX_CLOCK_RATE);
